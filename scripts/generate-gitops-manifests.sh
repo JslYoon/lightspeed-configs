@@ -51,14 +51,6 @@ data:
 HEADER
   strip_license "${REPO_ROOT}/lightspeed-core-configs/lightspeed-stack.yaml" \
     | indent
-  cat << 'MCP_SECTION'
-    mcp_servers:
-      - name: mcp-integration-tools
-        provider_id: "model-context-protocol"
-        url: "http://{{ .Release.Name }}-backstage.{{ .Release.Namespace }}.svc.cluster.local:7007/api/mcp-actions/v1"
-        authorization_headers:
-          Authorization: "/app-root/lightspeed-stack/mcp-auth-token"
-MCP_SECTION
 } > "${OUTPUT_DIR}/lightspeed-stack-config.yaml"
 
 echo "Generating llama-stack ConfigMap..."
@@ -105,6 +97,14 @@ sed \
   -e "s|\"image\": \"[^\"]*/lightspeed-stack[^\"]*\"|\"image\": \"${LIGHTSPEED_CORE_IMAGE}\"|g" \
   -e "s|\"image\": \"[^\"]*/rag-content[^\"]*\"|\"image\": \"${RAG_CONTENT_IMAGE}\"|g" \
   "${SIDECARS_JOB_SRC}" > "${OUTPUT_DIR}/rolling-demo-sidecars-job.yaml"
+
+echo "Updating rag-content image in values.yaml..."
+VALUES_YAML="${GITOPS_REPO}/charts/rhdh/values.yaml"
+if [[ ! -f "${VALUES_YAML}" ]]; then
+  echo "Error: ${VALUES_YAML} not found." >&2
+  exit 1
+fi
+sed -i "s|image: '[^']*/rag-content[^']*'|image: '${RAG_CONTENT_IMAGE}'|g" "${VALUES_YAML}"
 
 echo "Generated manifests:"
 ls -1 "${OUTPUT_DIR}"

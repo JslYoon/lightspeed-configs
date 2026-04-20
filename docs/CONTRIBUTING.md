@@ -3,7 +3,7 @@
 - [Prerequisites](#prerequisites)
 - [Running Locally](#running-locally)
 - [Configuring RAG Content](#configuring-rag-content)
-- [Configuring Safety Guards](#configuring-safety-guards)
+- [Configuring Validation](#configuring-validation)
 - [Syncing Configs](#syncing-configs)
   - [Syncing Images](#syncing-images)
 - [Formatting and Validating YAML](#formatting-and-validating-yaml)
@@ -14,6 +14,7 @@
 
 - [Podman](https://podman.io/docs/installation) v5.4.1+ (recommended) or [Docker](https://docs.docker.com/engine/) v28.1.0+ with Compose support
 - [yq](https://github.com/mikefarah/yq) v4.52.4+ for image and config sync/validation
+- `python3.12+` for the prompt-template sync/validation scripts
 
 ## Running Locally
 
@@ -31,7 +32,7 @@ make get-rag
 make local-up
 ```
 
-This starts Lightspeed Core. If `WITH_SAFETY=true` (default), it also starts Ollama for Llama Guard and waits for it to be healthy before Lightspeed Core starts.
+This starts Lightspeed Core using the mounted config/content below.
 
 Lightspeed Core uses mounted config/content in local compose:
 
@@ -40,13 +41,9 @@ Lightspeed Core uses mounted config/content in local compose:
 - `llama-stack-configs/config.yaml` -> `/app-root/config.yaml`
 - `rag-content/` -> `/rag-content`
 
-To run without safety guards:
+Question validation is not enabled automatically. If you want it, set `ENABLE_VALIDATION`, `VALIDATION_PROVIDER`, and `VALIDATION_MODEL_NAME` in `env/values.env`, along with any env vars required by the selected inference provider.
 
-```sh
-make local-up WITH_SAFETY=false
-```
-
-See [Configuring Safety Guards](#configuring-safety-guards) for all available options including remote safety endpoints.
+See [Configuring Validation](#configuring-validation) for example configurations.
 
 4. Stop services:
 
@@ -81,58 +78,35 @@ You will need the `vector_store_id` value. After copying that value you will nee
 
 
 
-## Configuring Safety Guards
+## Configuring Validation
 
-Safety is controlled by the `ENABLE_SAFETY` environment variable in `llama-stack-configs/config.yaml`. When set, it activates the safety provider, registers the guard model, and creates the shield. When empty, all safety entries are filtered out at startup.
+Question validation is controlled by the `ENABLE_VALIDATION` environment variable in `llama-stack-configs/config.yaml`. When set, it activates the `lightspeed_question_validity` shield. The shield uses `VALIDATION_PROVIDER` and `VALIDATION_MODEL_NAME` to select an enabled inference provider and model.
 
-There are three ways to run depending on your safety needs:
+`make local-up` does not start a validation service or inject validation defaults. If you enable validation, you must provide both `VALIDATION_PROVIDER` and `VALIDATION_MODEL_NAME` yourself in `env/values.env`.
 
-### 1. Without safety guards
+If `ENABLE_VALIDATION` is empty, validation is disabled and no additional configuration is required.
 
-No Ollama container, no safety provider. Useful for fast local development.
-
-```sh
-make local-up WITH_SAFETY=false
-```
-
-No additional environment variables are required. `ENABLE_SAFETY` stays empty in `env/default-values.env` and the safety entries in `config.yaml` are skipped.
-
-### 2. With a local safety guard (Ollama)
-
-Starts a local Ollama container that pulls and serves the Llama Guard model automatically.
-
-```sh
-make local-up
-```
-
-`WITH_SAFETY` defaults to `true`, which includes the `compose.ollama.yaml` overlay. This overlay starts the Ollama service and sets `ENABLE_SAFETY=true` on the Lightspeed Core container, overriding the empty default from your env file.
-
-| Variable | Default | Description |
-| ---- | ---- | ---- |
-| `ENABLE_SAFETY` | Set to `true` automatically by the compose overlay | Activates safety providers in `config.yaml` |
-| `SAFETY_MODEL` | `llama-guard3:8b` | Llama Guard model name pulled by Ollama |
-| `SAFETY_URL` | `http://ollama:11434/v1` | Points to the Ollama compose service |
-| `SAFETY_API_KEY` | *(empty)* | Not required for local Ollama |
-
-### 3. With a remote safety guard
-
-Use a Llama Guard model hosted elsewhere (e.g. vLLM on OpenShift) without running a local Ollama container.
-
-```sh
-make local-up WITH_SAFETY=false
-```
-
-Set the following in `env/values.env`:
+To enable validation, set the following in `env/values.env`:
 
 | Variable | Required | Description |
 | ---- | ---- | ---- |
-| `ENABLE_SAFETY` | Yes, set to `true` | Activates safety providers in `config.yaml` |
-| `SAFETY_URL` | Yes | URL of the remote safety model endpoint |
-| `SAFETY_MODEL` | If different from default | Model name. Defaults to `llama-guard3:8b` |
-| `SAFETY_API_KEY` | If the endpoint requires auth | API key for the remote service |
+| `ENABLE_VALIDATION` | Yes, set to `true` | Activates the validation shield in `config.yaml` |
+| `VALIDATION_PROVIDER` | Yes | Inference provider used by the validation shield, for example `vllm` or `openai` |
+| `VALIDATION_MODEL_NAME` | Yes | Model name served by the selected inference provider |
 
-> [!NOTE]
-> In this scenario `WITH_SAFETY=false` is used because there is no need for a local Ollama container -- the safety provider in `config.yaml` is activated by `ENABLE_SAFETY=true` in your `values.env` and points to the remote URL.
+You must also enable and configure the referenced inference provider. Examples:
+
+### Example: vLLM-backed validation
+
+```env
+ENABLE_VALIDATION=true
+VALIDATION_PROVIDER=vllm
+VALIDATION_MODEL_NAME=<your-model-name>
+ENABLE_VLLM=true
+VLLM_URL=<your-vllm-endpoint>
+VLLM_API_KEY=<api-key>
+```
+
 
 ## Syncing Configs
 
@@ -152,6 +126,21 @@ This reads the `image` field for each service in `images.yaml` and updates the c
 
 `lightspeed-core-configs/rhdh-profile.py` is maintained directly in this repository (not synced from upstream). Keep `customization.profile_path` in `lightspeed-core-configs/lightspeed-stack.yaml` aligned with the mount path configured in `compose/compose.yaml` (`/app-root/rhdh-profile.py`).
 
+### Syncing Prompt Templates
+
+The question-validation `model_prompt` and `invalid_question_response` in `llama-stack-configs/config.yaml` are sourced from `lightspeed-core-configs/rhdh-profile.py`.
+
+`make update-prompt-templates` and `make validate-prompt-templates` call `scripts/sync-prompt-templates.py` directly with `python3`. The helper requires Python 3.12+ and will exit with a clear error if invoked with an older interpreter.
+
+The Python helper is used because the source of truth lives in a Python file and the sync step needs to parse Python triple-quoted strings, translate placeholders for the Llama Stack YAML (`{SUBJECT_ALLOWED}` -> `${allowed}`, `{SUBJECT_REJECTED}` -> `${rejected}`, `{{query}}` -> `${message}`), and rewrite YAML block scalars in a stable format. The helper uses only the Python standard library.
+
+After updating `QUESTION_VALIDATOR_PROMPT_TEMPLATE` or `INVALID_QUERY_RESP` in `lightspeed-core-configs/rhdh-profile.py`:
+
+```sh
+make update-prompt-templates
+make validate-prompt-templates
+```
+
 ## Formatting and Validating YAML
 
 Format and validate YAML files (also used by CI):
@@ -161,26 +150,19 @@ make format-yaml
 make validate-yaml
 ```
 
-Update the question-validation provider config from upstream:
-
-```sh
-make update-question-validation QUESTION_VALIDATION_TAG=0.1.17
-```
-
 ## Makefile Commands
 
 | Command | Description |
 | ---- | ---- |
 | `get-rag` | Pull and unpack RAG content into `./rag-content` (replaces existing contents). Optional: `RAG_CONTENT_IMAGE=<image>`. |
-| `local-up` | Start local compose services. Default: `WITH_SAFETY=true` (starts Ollama and enables safety). Set `WITH_SAFETY=false` to skip the local Ollama container. |
+| `local-up` | Start local compose services. Validation is controlled entirely through env vars in `env/values.env`. |
 | `local-down` | Stop local compose services. |
 | `sync-images` | Sync image values from `images.yaml` into `env/default-values.env`. Requires `yq`. |
 | `validate-images` | Validate that `images.yaml` and `env/default-values.env` are in sync. Requires `yq`. |
 | `validate-yaml` | Validate YAML formatting/syntax. |
 | `format-yaml` | Format YAML files. |
-| `update-question-validation` | Update question-validation content in `config/providers.d`. Optional: `QUESTION_VALIDATION_TAG=<tag>`. |
-| `validate-prompt-templates` | Validate prompt values against upstream templates. |
-| `update-prompt-templates` | Update prompt values from upstream templates. |
+| `validate-prompt-templates` | Validate that the question-validation prompt values in `llama-stack-configs/config.yaml` match `lightspeed-core-configs/rhdh-profile.py`. |
+| `update-prompt-templates` | Sync the question-validation prompt values in `llama-stack-configs/config.yaml` from `lightspeed-core-configs/rhdh-profile.py`. |
 
 ## Troubleshooting
 

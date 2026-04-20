@@ -46,9 +46,19 @@ jobs:
       steps:
         - name: Checkout code
           uses: actions/checkout@v4
+        - name: Use Python 3.12
+          uses: actions/setup-python@v5
+          with:
+            python-version: '3.12'
         - name: Install yq
           run: |
             sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.52.4/yq_linux_amd64
             sudo chmod +x /usr/local/bin/yq
         - name: Validate image sync
           run: bash scripts/validate-images.sh
+        - name: Validate prompt template sync
+          run: |
+            if ! make validate-prompt-templates; then
+              echo "ERROR: Prompt templates are out of sync between lightspeed-core-configs/rhdh-profile.py and llama-stack-configs/config.yaml. Run 'make update-prompt-templates' and commit the result."
+              exit 1
+            fi

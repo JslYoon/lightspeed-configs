@@ -14,26 +14,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 RAG_CONTENT_IMAGE ?= $(shell grep '^RAG_CONTENT_IMAGE=' env/default-values.env | cut -d= -f2-)
-QUESTION_VALIDATION_TAG ?= 0.1.17
-QUESTION_VALIDATION_URL ?= https://raw.githubusercontent.com/lightspeed-core/lightspeed-providers/refs/tags/$(QUESTION_VALIDATION_TAG)/resources/external_providers/inline/safety/lightspeed_question_validity.yaml
 CONTAINER_ENGINE ?= podman
 COMPOSE ?= $(CONTAINER_ENGINE) compose
-WITH_SAFETY ?= true
 
 ENV_FILES := --env-file env/default-values.env
 ifneq ($(wildcard env/values.env),)
 ENV_FILES += --env-file env/values.env
 endif
 
-ifeq ($(WITH_SAFETY),false)
 LOCAL_COMPOSE_FILES := -f compose/compose.yaml
-else
-LOCAL_COMPOSE_FILES := -f compose/compose.yaml -f compose/compose.ollama.yaml
-endif
-
-VENV := $(CURDIR)/scripts/python-scripts/.venv
-PYTHON := $(VENV)/bin/python3
-PIP := $(VENV)/bin/pip3
 
 .PHONY: default
 default: help
@@ -66,27 +55,13 @@ help: ## Show this help screen
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-33s\033[0m %s\n", $$1, $$2}'
 	@echo ''
 
-.PHONY: update-question-validation
-update-question-validation:
-	curl -o ./config/providers.d/inline/safety/lightspeed_question_validity.yaml $(QUESTION_VALIDATION_URL)
-
-$(VENV)/bin/activate: ./scripts/python-scripts/requirements.txt
-	python3 -m venv $(VENV)
-	$(PIP) install -r scripts/python-scripts/requirements.txt
-	touch $(VENV)/bin/activate
-
-define run_sync
-	cd ./scripts/python-scripts && \
-	$(PYTHON) sync.py -t $(1)
-endef
-
 .PHONY: validate-prompt-templates
-validate-prompt-templates: $(VENV)/bin/activate
-	$(call run_sync,validate)
+validate-prompt-templates: ## Validate prompt templates are in sync
+	python3 scripts/sync-prompt-templates.py validate
 
 .PHONY: update-prompt-templates
-update-prompt-templates: $(VENV)/bin/activate
-	$(call run_sync,update)
+update-prompt-templates: ## Sync prompt templates from rhdh-profile.py
+	python3 scripts/sync-prompt-templates.py update
 
 .PHONY: sync-images
 sync-images: ## Sync image values from images.yaml into default-values.env
