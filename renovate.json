@@ -1,0 +1,85 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    ":gitSignOff"
+  ],
+  "timezone": "America/Toronto",
+  "schedule": [
+    "* 19-23 * * 0",
+    "* 0-2 * * 1"
+  ],
+  "baseBranchPatterns": ["/^main$/", "/^release-\\d+\\.\\d+$/"],
+  "enabledManagers": [
+    "github-actions",
+    "custom.regex",
+    "npm"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/images.*y[a]?ml$/"
+      ],
+      "matchStrings": [
+        "image: (?<depName>\\S*):(?<currentValue>\\S*)"
+      ],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "{{{depName}}}"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "matchManagers": ["custom.regex"],
+      "matchUpdateTypes": ["major", "minor"],
+      "matchBaseBranches": ["/^release-\\d+\\.\\d+$/"],
+      "enabled": false
+    },
+    {
+      "matchManagers": ["github-actions","npm"],
+      "matchBaseBranches": ["/^release-\\d+\\.\\d+$/"],
+      "enabled": false
+    },
+    {
+      "matchDepNames": ["quay.io/lightspeed-core/lightspeed-stack"],
+      "enabled": false
+    },
+    {
+      "matchDepNames": ["quay.io/lightspeed-core/lightspeed-stack"],
+      "matchBaseBranches": ["/^release-\\d+\\.\\d+$/"],
+      "matchUpdateTypes": ["patch"],
+      "extractVersion": "^(?<version>\\d+\\.\\d+\\.\\d+)",
+      "versioning": "loose",
+      "enabled": true
+    },
+    {
+      "matchDepNames": ["quay.io/redhat-ai-dev/rag-content"],
+      "extractVersion": "^release-(?<version>\\d+\\.\\d+)-l(c|l)s",
+      "versioning": "loose"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions",
+      "groupSlug": "github-actions",
+      "commitMessageTopic": "{{depName}}"
+    },
+    {
+      "matchManagers": ["npm"],
+      "groupName": "npm deps",
+      "groupSlug": "npm-deps",
+      "commitMessageTopic": "{{depName}}"
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true
+  },
+  "prHourlyLimit": 20,
+  "prConcurrentLimit": 10,
+  "labels": ["renovatebot"],
+  "reviewers": ["team:ai-development-team"]
+}
