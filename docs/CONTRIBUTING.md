@@ -22,6 +22,8 @@
 
    To configure inference providers without editing the git-tracked `lightspeed-stack.yaml`, copy `lightspeed-core-configs/lightspeed-stack.yaml` to `lightspeed-core-configs/lightspeed-stack.local.yaml` and make your edits there. `make local-up` mounts the `.local.yaml` file automatically when it's present, otherwise it falls back to `lightspeed-stack.yaml`. `lightspeed-stack.local.yaml` is gitignored, so it's safe to leave provider config there permanently.
 
+   Providers meant only for the GitOps/production deployment (currently `vllm`, `openai`, and `vertexai` in `lightspeed-stack.yaml`) are injected by [scripts/generate-gitops-manifests.sh](../scripts/generate-gitops-manifests.sh) and intentionally absent from the git-tracked `lightspeed-stack.yaml` — add them to `lightspeed-stack.local.yaml` to test them locally, and update the script's injection logic if you need to change what reaches the deployed environment.
+
 2. Pull the RAG content:
 
 ```sh
