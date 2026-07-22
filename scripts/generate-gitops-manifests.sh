@@ -38,6 +38,39 @@ get_image() {
   ' "${REPO_ROOT}/images.yaml"
 }
 
+notebooks_faiss_to_pgvector() {
+  awk '
+    /^    - provider_id: notebooks$/ {
+      skip = 1
+      print "    - provider_id: notebooks"
+      print "      provider_type: remote::pgvector"
+      print "      config:"
+      print "        host: ${env.PGVECTOR_HOST:=lightspeed-postgres-svc.lightspeed-postgres.svc.cluster.local}"
+      print "        port: ${env.PGVECTOR_PORT:=5432}"
+      print "        db: ${env.PGVECTOR_DB}"
+      print "        user: ${env.PGVECTOR_USER}"
+      print "        password: ${env.PGVECTOR_PASSWORD}"
+      print "        distance_metric: COSINE"
+      print "        vector_index:"
+      print "          type: HNSW"
+      print "          m: 16"
+      print "          ef_construction: 64"
+      print "          ef_search: 40"
+      print "        persistence:"
+      print "          namespace: vector_io::pgvector"
+      print "          backend: kv_default"
+      next
+    }
+    skip && /^    - provider_id:/ { skip = 0 }
+    skip && /^  [a-zA-Z]/ { skip = 0 }
+    skip { next }
+    /^    kv_notebooks:$/ { skip_kv = 1; next }
+    skip_kv && /^[^ ]|^  [a-zA-Z]|^    [a-zA-Z]/ { skip_kv = 0 }
+    skip_kv { next }
+    { print }
+  '
+}
+
 echo "Generating llama-stack ConfigMap..."
 {
   cat << 'HEADER'
@@ -50,6 +83,7 @@ data:
   config.yaml: |
 HEADER
   strip_license "${REPO_ROOT}/llama-stack-configs/config.yaml" \
+    | notebooks_faiss_to_pgvector \
     | indent
 } > "${OUTPUT_DIR}/llama-stack-config.yaml"
 
